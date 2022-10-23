@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+        <style>
+            .wide{
+                width:100%;
+            }
+        </style>
+    <script>
+        var window=this;
+        var ne=0.11;
+        window.dragging=false;
+        window.startDragX=null;
+        window.startDragY=null;
+        window.rootXYZ=null;
+
+        function startDragging(event) {
+            var lwo=window.viewpoint.coordsOver(event.offsetX, event.offsetY)
+            if (lwo) {
+                window.clicking=lwo
+            } else {
+            window.dragging=true;
+            }
+        }
+
+        function stopDragging() {
+            if (window.clicking) {
+                window.moveTo(window.clicking.object.getWieghtedEquitorialXyzLocation().X, window.clicking.object.getWieghtedEquitorialXyzLocation().Y, window.clicking.object.getWieghtedEquitorialXyzLocation().Z)
+                window.clicking=null;
+            }
+            window.dragging=false;
+            window.startDragX=null;
+            window.startDragY=null;
+            window.rootXYZ=null;
+            
+        }
+
+        function maybeDrag(event) {
+            var coreX=event.offsetX;
+            var coreY=event.offsetY;
+            if (window.dragging) {
+                if (window.startDragX==null) {
+                    window.startDragX=coreX 
+                    window.startDragY=coreY 
+                    window.rootXYZ={X:window.viewpoint.xyz.X, Y:window.viewpoint.xyz.Y, Z:window.viewpoint.xyz.Z}
+                }
+                var dragX=coreX-window.startDragX
+                var dragY=coreY-window.startDragY
+                var lyXDelta = dragX/window.viewpoint.canvasElement.width *10
+                var lyYDelta = dragY/window.viewpoint.canvasElement.height  *10
+                viewpoint.xyz.X=window.rootXYZ.X-lyXDelta
+                viewpoint.xyz.Y=window.rootXYZ.Y-lyYDelta
+                window.viewpoint.paint(starSystemsToLinesWithObject(window.starSystems));
+                document.getElementById("xDisplay").value=viewpoint.xyz.X
+                document.getElementById("yDisplay").value=viewpoint.xyz.Y
+                
+            } else {
+                var lwo=viewpoint.coordsOver(coreX, coreY)
+                if (window.clicking) {
+                    if (lwo===window.clicking) {
+
+                    } else {
+                        window.clicking=false;
+                        window.dragging=true;
+                    }
+                }
+                if (lwo) {
+                    document.getElementById('canvas').style['cursor']='pointer';
+                } else {
+                    document.getElementById('canvas').style['cursor']=null;
+                }
+            }
+        }
+        function zoom(event) {
+                viewpoint.xyz.Z=viewpoint.xyz.Z - event.deltaY/-10
+                window.viewpoint.paint(starSystemsToLinesWithObject(window.starSystems));
+                document.getElementById("zDisplay").value=viewpoint.xyz.Z
+        }
+
+        function rightAscensionTextRadians(rightAscensionText) {
+            return  2*Math.PI *
+                        ((+rightAscensionText.split(' ')[0])/24 
+                        +(+rightAscensionText.split(' ')[1])/24/60 
+                        +(+rightAscensionText.split(' ')[2])/24 /3600);
+        }
+
+        function declinationTextToRadians(declinationText) {
+            if ((+declinationText.split(' ')[0])>=0) {
+                    return 2*Math.PI* (
+                    (+(declinationText.split(" ")[0]))/360
+                    +(+(declinationText.split(" ")[2]))/360/60
+                    +(+(declinationText.split(" ")[2]))/360/3600)
+                } else {
+                    return 2*Math.PI*((+(declinationText.split(" ")[0]))/360
+                    -(+(declinationText.split(" ")[2]))/360/60
+                    -(+(declinationText.split(" ")[2]))/360/3600)
+                }
+        }
+
+        var rightAscensionGalacticNorthRadians=rightAscensionTextRadians('12 51.4 0');
+        var declinationGalacticNorthRadians=declinationTextToRadians('+27.13 0 0');
+
+        class Star {
+            
+            constructor(names, rightAscensionText, declinationText, paralax, paralaxError, spectralClassLetter, spectralClassNumber,
+                        absoluteMagnitudeVisual, massEstimate, extraTagsObject) {
+                this.id="Star:"+Math.random()+":"+Math.random()
+                this.names=names;
+                this.rightAscensionText=rightAscensionText;
+                this.declinationText=declinationText;
+                this.paralax=paralax;
+                this.paralaxError=paralaxError;
+                this.spectralClassLetter = spectralClassLetter.toUpperCase();
+                this.spectralClassNumber=spectralClassNumber;
+                this.absoluteMagnitudeVisual=absoluteMagnitudeVisual;
+                this.massEstimate=massEstimate;
+                this.rightAscensionRadians=rightAscensionTextRadians(rightAscensionText);
+                this.declinationRadians=declinationTextToRadians(declinationText)
+                this.galacticLatitudeRadians=Math.asin(Math.sin(declinationGalacticNorthRadians) * Math.sin(this.declinationRadians)
+                        + Math.cos(declinationGalacticNorthRadians) * Math.cos(this.declinationRadians) * Math.cos(this.rightAscensionRadians -rightAscensionGalacticNorthRadians ))
+                if (Math.cos(this.galacticLatitudeRadians)==0) {
+                    this.galacticLongitudeRadians=0
+                } else {
+                    this.galacticLongitudeRadians=Math.asin((
+                        Math.cos(this.declinationRadians) * Math.sin(this.rightAscensionRadians - rightAscensionGalacticNorthRadians)
+                    
+                    /Math.cos(this.galacticLongitudeRadians))+rightAscensionGalacticNorthRadians);
+                }
+                this.distance=3.261563777/paralax
+                this.equitorialRectangular=convertToXYZ(this.declinationRadians, this.rightAscensionRadians, this.distance)
+
+                this.galacticRectangular=convertToXYZ(this.galacticLongitudeRadians, this.galacticLatitudeRadians, this.distance)
+                if (extraTagsObject) {
+                    for (var index in extraTagsObject) {
+                        this[index]=extraTagsObject[index]
+                    }
+                }
+            }
+            getRadiusEstimatePixels() {
+                if (this.spectralClassLetter[0]=='D') {
+                    return 3;
+                }
+                return this.massEstimate?10*Math.pow(this.massEstimate, 1/3):5;
+            }
+        }
+
+        function convertToXYZ(param1, param2, param3) {
+            if ((typeof param1)=='object') {
+                declinationOrLongitudeRadians=param1.declinationOrLongitudeRadians;
+                rightAscensionOrLatitudeRadians=param1.rightAscensionOrLatitudeRadians;
+                distance=param1.distance;
+            } else {
+                declinationOrLongitudeRadians=param1;
+                rightAscensionOrLatitudeRadians=param2;
+                distance=param3;
+            }
+            var res={};
+            res.X=distance * Math.cos(this.declinationOrLongitudeRadians) * Math.cos(this.rightAscensionOrLatitudeRadians);
+            res.Y=distance * Math.cos(this.declinationOrLongitudeRadians) * Math.sin(this.rightAscensionOrLatitudeRadians)
+            res.Z=distance * Math.sin(this.declinationOrLongitudeRadians)
+            return res;
+        }
+
+        function xyzToLongLatDistance(xyz) {
+            var distance = Math.sqrt(xyz.X*xyz.X + xyz.Y*xyz.Y + xyz.Z*xyz.Z)
+            var declinationOrLongitudeRadians = Math.asin(xyz.Z/distance)
+            var rightAscensionOrLatitudeRadians= Math.cos(declinationOrLongitudeRadians)==+Math.cos(declinationOrLongitudeRadians)?Math.asin(xyz.Y/distance/Math.cos(declinationOrLongitudeRadians)):0
+            return {declinationOrLongitudeRadians:declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:rightAscensionOrLatitudeRadians, distance:distance}
+        }
+
+        class LineWithObject {
+            constructor(start, end, object) { // start and end should be in xyz
+                this.start=start;
+                this.end=end;
+                this.object=object;
+            }
+            translate(translation) {
+                this.start=translate(this.start, translation)
+                this.end=trannslate(this.end, translation);
+            }
+        }
+
+        function starSystemsToLinesWithObject(starSystems) {
+            var res=[];
+            for (let ss of starSystems) {
+                var xyz=ss.getWieghtedEquitorialXyzLocation();
+                xyz.Z=-20;
+                res.push(new LineWithObject(xyz, ss.getWieghtedEquitorialXyzLocation(), ss));
+            }
+            return res;
+        }
+
+        class Viewpoint {
+            // Initially, viewpoints appear at a point and are always looking strait down.
+            // is z must be below for visibility to be considered
+            
+            constructor(xyz, horzSemiWidth, vertSemiWidth, canvasElement, maxVision, tableElement) {
+                this.xyz=xyz // xyz is the point at which the camera is
+                this.horzSemiWidth=horzSemiWidth; // The half-width in radians
+                this.vertSemiWidth=vertSemiWidth; // The half-width in radians
+                this.canvasElement=canvasElement; // The canvas 2d context
+                this.maxVision=maxVision;
+                this.tableElement=tableElement;
+                this.clickableCoords=[];
+            }
+            convertXyzViewpointRestrictedView(xyz) {
+                var newXyz = translate(translate(xyz, invertTranslation(this.xyz)), {X:0,Y:0,Z:-this.maxVision/2})
+                if (newXyz.Z>0) {
+                    return undefined;
+                }
+                var arcX = Math.atan(newXyz.X/(Math.abs(newXyz.Z)))
+                var arcY = Math.atan(newXyz.Y/(Math.abs(newXyz.Z)))
+                if (arcX > this.horzSemiWidth || arcX < -this.horzSemiWidth) {
+                    return undefined;
+                }
+                if (arcY > this.vertSemiWidth || arcY < -this.vertSemiWidth) {
+                    return undefined;
+                }
+                var newX = ((0.5*arcX/this.horzSemiWidth)+0.5) * this.canvasElement.width;
+                var newY = ((0.5*arcY/this.vertSemiWidth)+0.5) * this.canvasElement.height;
+                return {x: newX, y:newY}
+            }
+
+            paintMap(linesWithObjects) {
+                var width=this.canvasElement.width;
+                var height=this.canvasElement.height;
+                var ctx = canvas.getContext("2d");
+                ctx.clearRect(0,0, width, height);
+                this.clickableCoords=[];
+                for (let lwo of linesWithObjects) {
+                    var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
+                    if (lwo.object.getWeightedStromgrenRadiusAtNeLy(ne)>0) {
+                       // drawStromgrenSphere(lwo);
+                    }
+                }
+                for (let lwo of linesWithObjects) {
+                    var startXy=this.convertXyzViewpointRestrictedView(lwo.start)
+                    var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
+                    if (startXy && endXy && lwo.end.Z > -this.maxVision+this.xyz.Z) {
+                        if (this.highlight==lwo.object.id) {
+                            var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects)
+                            var topLeftx=endXy.x-14 -widthHeight.width/2;
+                            var topLefty=endXy.y-14;
+                            ctx.fillStyle='#ffff00'
+                            ctx.fillRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.clearRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.strokeStyle='black'
+                            ctx.lineWidth=2;
+                            ctx.strokeRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.strokeRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.lineWidth=1;
+                        }
+                        var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects, false, false)
+                        this.clickableCoords.push({topLeft:{x:endXy.x-widthHeight.width/2, y:endXy.y}, bottomRight:{x:endXy.x+widthHeight.width/2, y:endXy.y+widthHeight.height}, lwo:lwo})
+                    }
+                }
+                for (let lwo of linesWithObjects) {
+                    var startXy=this.convertXyzViewpointRestrictedView(lwo.start)
+                    var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
+                    if (startXy && endXy && lwo.end.Z > -this.maxVision+this.xyz.Z) {
+                        if (this.highlight==lwo.object.id) {
+                            var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects)
+                            var topLeftx=endXy.x-14 -widthHeight.width/2;
+                            var topLefty=endXy.y-14;
+                            ctx.fillStyle='#ffff00'
+                            ctx.fillRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.clearRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.strokeStyle='black'
+                            ctx.lineWidth=2;
+                            ctx.strokeRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.strokeRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.lineWidth=1;
+                        }
+                        var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects, true, true)
+                        this.clickableCoords.push({topLeft:{x:endXy.x-widthHeight.width/2, y:endXy.y}, bottomRight:{x:endXy.x+widthHeight.width/2, y:endXy.y+widthHeight.height}, lwo:lwo})
+
+                    }
+                }
+            }
+
+            drawStromgrenSphere(lwo) {
+                var widthLy=lwo.object.getWeightedStromgrenRadiusAtNeLy(ne);
+                var centerXyz = translate(translate(lwo.end, invertTranslation(this.xyz)), {X:0,Y:0,Z:-this.maxVision/2})
+                
+                var bottomXyz = this.convertXyzViewpointRestrictedView(translate(centerXyz, {X:0,Y:0,Z:-widthLy}))
+                var bottomPixels = this.convertXyzViewpointRestrictedView(newXyz)
+               // var vertRadius = 
+            }
+
+            drawStarSystem(startXy, endXy, lwo, linesWithObjects, includeStromgren, rejectNonStromgren) {
+                var ctx = canvas.getContext("2d");
+                ctx.beginPath();
+                        var totalVerticalIncrement=0;
+                        var maxHorzIncrement=0;
+                        var withinStromgrenSphereSoFar=false;
+                        for (let stromSearchStart of linesWithObjects) {
+                            var weightedStromgren=stromSearchStart.object.getWeightedStromgrenRadiusAtNeLy(ne);
+                            var distanceFromObject=rectangularDistance(stromSearchStart.object.getWieghtedEquitorialXyzLocation(), lwo.object.getWieghtedEquitorialXyzLocation());
+                            if ( weightedStromgren> distanceFromObject) {
+                                withinStromgrenSphereSoFar=true;
+                            }
+                        }
+                        var withinStromgrenSphere = withinStromgrenSphereSoFar;
+                        ctx.strokeStyle = withinStromgrenSphere?'black':downConvertColour('#000000');
+                        ctx.moveTo(startXy.x, startXy.y);
+                        ctx.lineTo(endXy.x, endXy.y);
+                        ctx.stroke();
+                        if (withinStromgrenSphere && includeStromgren || !withinStromgrenSphere && !rejectNonStromgren ) {
+                            for (let star of lwo.object.starSystems) {
+                                var radius=star.getRadiusEstimatePixels();
+                                var rad=drawStar(ctx, endXy.x, endXy.y+totalVerticalIncrement+radius, radius, stellarClassColour(star.spectralClassLetter),  withinStromgrenSphere) // without number, for now.
+                                totalVerticalIncrement+=2*rad+2;
+                                maxHorzIncrement=Math.max(maxHorzIncrement, rad);
+                            }
+                            ctx.strokeStyle = withinStromgrenSphere?'black':downConvertColour('#000000');;
+                            ctx.moveTo(endXy.x+maxHorzIncrement+3, endXy.y);
+                            ctx.strokeText(lwo.object.getName(), endXy.x+maxHorzIncrement+3, endXy.y)
+                            return {width:maxHorzIncrement*2, height:totalVerticalIncrement}
+                        } else {
+                            return {width:0, height:0};
+                        }
+            }
+
+            coordsOver(x,y) {
+                for (var index = this.clickableCoords.length-1; index>=0; index--) {
+                    var coord=this.clickableCoords[index];
+                    if (x>coord.topLeft.x && x < coord.bottomRight.x && y > coord.topLeft.y && y < coord.bottomRight.y) {
+                        return coord.lwo
+                    }
+                }
+                return false;
+            }
+           
+            paint(linesWithObjects) {
+                this.paintMap(linesWithObjects);
+                if (this.tableElement) {
+                    let innerHtml="";
+                    var copiedStarSystemsArray=[];
+                    for (let lwo of linesWithObjects) {
+                        copiedStarSystemsArray.push(lwo.object)
+                    }
+                    copiedStarSystemsArray.sort((x,y) => {
+                        var distanceX = rectangularDistance(x.getWieghtedEquitorialXyzLocation(), this.xyz);
+                        var distanceY = rectangularDistance(y.getWieghtedEquitorialXyzLocation(), this.xyz);
+                        if (distanceX==distanceY) return 0;
+                        if (distanceX>distanceY) return 1;
+                        return -1;
+                    })
+                    for (var index=0; index<100; index++) {
+                        var sSystem=copiedStarSystemsArray[index];
+                        var withinStromgrenSphereSoFar=false;
+                        for (let stromSearchStart of linesWithObjects) {
+                            var weightedStromgren=stromSearchStart.object.getWeightedStromgrenRadiusAtNeLy(ne);
+                            var distanceFromObject=rectangularDistance(stromSearchStart.object.getWieghtedEquitorialXyzLocation(), sSystem.getWieghtedEquitorialXyzLocation());
+                            if ( weightedStromgren> distanceFromObject) {
+                                withinStromgrenSphereSoFar=true;
+                            }
+                        }
+                        var withinStromgrenSphere = withinStromgrenSphereSoFar;
+                        innerHtml+= "<tr style=\"cursor:pointer;"+(!withinStromgrenSphere?"color:"+( upConvertColour(downConvertColour('#000000'), 0.25)+";"):"")+"\" onclick=\"moveTo("+sSystem.getWieghtedEquitorialXyzLocation().X+", "
+                        +sSystem.getWieghtedEquitorialXyzLocation().Y+", "+sSystem.getWieghtedEquitorialXyzLocation().Z+")\" onmouseenter=\"highlight('"+sSystem.id+"')\" onmouseleave=\"highlight('')\"  ><td>"+sSystem.getName()+"</td><Td>"+roundToDp(rectangularDistance(sSystem.getWieghtedEquitorialXyzLocation(), this.xyz), 2)+" ly</td></tr>";
+                    }
+                    this.tableElement.innerHTML=innerHtml;
+                }
+            }
+        }
+
+        function highlight(id) {
+            window.viewpoint.highlight=id;
+            window.viewpoint.paintMap(starSystemsToLinesWithObject(window.starSystems));
+        }
+        function moveTo(x,y,z) {
+                viewpoint.xyz={X:x, Y:y, Z:z}
+                window.viewpoint.paint(starSystemsToLinesWithObject(window.starSystems));
+                document.getElementById("xDisplay").value=roundToDp(viewpoint.xyz.X, 6)
+                document.getElementById("yDisplay").value=roundToDp(viewpoint.xyz.Y, 6)
+                document.getElementById("zDisplay").value=roundToDp(viewpoint.xyz.Z, 6)
+            }
+
+        function rectangularDistance(xyz, secondXyz) {
+            return Math.sqrt((xyz.X-secondXyz.X)*(xyz.X-secondXyz.X) +  (xyz.Y-secondXyz.Y)*(xyz.Y-secondXyz.Y) + (xyz.Z-secondXyz.Z)*(xyz.Z-secondXyz.Z))
+        }
+
+        function drawStar(ctx, x, y, radius, strokeStyle,  withinStromgren) {
+            var rad=radius;
+            var circle = new Path2D();
+            circle.moveTo(x+radius,y);
+            ctx.fillStyle=withinStromgren?strokeStyle: downConvertColour( strokeStyle);
+            circle.arc(x, y, radius, 0, 2*Math.PI);
+            ctx.fill(circle);
+            ctx.stroke();
+            ctx.strokeStyle = withinStromgren?'black':downConvertColour('#000000');
+            ctx.arc(x, y, radius, 0, 2*Math.PI);
+            ctx.stroke();
+            return rad;
+        }
+        
+       
+
+        function stellarClassColour(spectralClassLetter, spectralClassNumber) {
+            if (!spectralClassLetter) {
+                return '#A52A2A';
+            }
+            if (spectralClassLetter[0]==='D') {
+                if (!spectralClassNumber) {
+                    return '#ff00ff'
+                }
+                return "#"+toHex(255-12.8*spectralClassNumber)+"00"+toHex(255-12.8*spectralClassNumber)
+            }
+            switch (spectralClassLetter) {
+                case 'O':
+                if (!spectralClassNumber) {
+                    return '#2f00ff'
+                }
+                return "#"+toHex(47-2*spectralClassNumber)+"00FF"
+                break;
+                case 'B':
+                if (!spectralClassNumber) {
+                    return '#0000ff'
+                }
+                return "#0000"+toHex(255-12*spectralClassNumber)
+                break;
+                case 'A':
+                if (!spectralClassNumber) {
+                    return '#a0a0ff'
+                }
+                return "#"+toHex(160-8*spectralClassNumber)+toHex(160-8*spectralClassNumber)+toHex(255-12*spectralClassNumber)
+                return '#a0a0ff';
+                break;
+                case 'F':
+                if (!spectralClassNumber) {
+                    return '#ffffff'
+                }
+                return "#"+toHex(255-12*spectralClassNumber)+toHex(255-12*spectralClassNumber)+toHex(255-12*spectralClassNumber)
+                break;
+                case 'G':
+                if (!spectralClassNumber) {
+                    return '#ffff00'
+                }
+                return "#"+toHex(255-12*spectralClassNumber)+toHex(255-12*spectralClassNumber)+"00"
+                break;
+                case 'K':
+                if (!spectralClassNumber) {
+                    return '#ffa500'
+                }
+                return "#"+toHex(255-12*spectralClassNumber)+toHex(165-8*spectralClassNumber)+"00"
+                break;
+                case 'M':
+                if (!spectralClassNumber) {
+                    return '#bf0000'
+                }
+                return "#"+toHex(181-10*spectralClassNumber)+"0000"
+                break;
+            }
+            return '#A52A2A';
+        }
+        function toHex(number) {
+            if (number <1) {
+                return "0";
+            } else if (number <2) {
+                return "1";
+            } else if (number <3) {
+                return "2";
+            } else if (number <4) {
+                return "3";
+            } else if (number <5) {
+                return "4";
+            } else if (number <6) {
+                return "5";
+            } else if (number <7) {
+                return "6";
+            } else if (number <8) {
+                return "7";
+            } else if (number <9) {
+                return "8";
+            } else if (number <10) {
+                return "9";
+            } else if (number <11) {
+                return "A";
+            } else if (number <12) {
+                return "B";
+            } else if (number <13) {
+                return "C";
+            } else if (number <14) {
+                return "D";
+            } else if (number <15) {
+                return "E";
+            } else if (number <16) {
+                return "F";
+            }
+            return toHex(number/16)+toHex(number%16);
+        }
+
+        function twoHex(number) {
+            var hex=toHex(number);
+            if (hex.length<2) hex="0"+hex;
+            return hex;
+        }
+
+        function fromHex(char) {
+            switch(char) {
+                case '0': return 0;
+                case '1': return 1;
+                case '2': return 2;
+                case '3': return 3;
+                case '4': return 4;
+                case '5': return 5;
+                case '6': return 6;
+                case '7': return 7;
+                case '8': return 8;
+                case '9': return 9;
+                case 'A': return 10;
+                case 'B': return 11;
+                case 'C': return 12;
+                case 'D': return 13;
+                case 'E': return 14;
+                case 'F': return 15;
+                case 'a': return 10;
+                case 'b': return 11;
+                case 'c': return 12;
+                case 'd': return 13;
+                case 'e': return 14;
+                case 'f': return 15;
+            }
+        }
+
+        function downConvertColour(colour) {
+            var red = fromHex(colour[1])*16 + fromHex(colour[2])
+            var green = fromHex(colour[3])*16 + fromHex(colour[4])
+            var blue = fromHex(colour[5])*16 + fromHex(colour[6])
+            console.assert(red>=0, colour)
+            console.assert(green>=0)
+            console.assert(blue>=0)
+            var ratio = (+document.getElementById('solidity').value)/100
+            var colour= "#"+twoHex((255 * (1-ratio))+red*ratio) +twoHex((255 * (1-ratio))+green*ratio)+twoHex((255 * (1-ratio))+blue*ratio)
+            return colour;
+        }
+        
+        function upConvertColour(colour, bonus) {
+            var red = fromHex(colour[1])*16 + fromHex(colour[2])
+            var green = fromHex(colour[3])*16 + fromHex(colour[4])
+            var blue = fromHex(colour[5])*16 + fromHex(colour[6])
+            console.assert(red>=0, colour)
+            console.assert(green>=0)
+            console.assert(blue>=0)
+            var colour= "#"+twoHex((0 *bonus + red*(1-bonus))) +twoHex((0 *bonus + green*(1-bonus)))+twoHex((0 *bonus + blue*(1-bonus)))
+            return colour;
+        }
+
+        // Returns the intersection of the line with the
+        function restrict(lineStart, lineEnd, rectangleBottomLeft, rectangleTopRight) {
+            /*
+                All inputs should be in 
+                {declinationOrLongitudeRadians:declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:rightAscensionOrLatitudeRadians, distance:distance}
+                format, although the distances are unimportant
+                We need to solve the intersections with each of the border rules. (If the line is exactly horisontal or vertical, there will be no intersection)
+                // returns {start, end} with declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians in both. Undefined if not displayed
+            */
+            
+            // y=mx+c, x is declinationOrLongitudeRadians
+            var m = (lineEnd.declinationOrLongitudeRadians - lineStart.declinationOrLongitudeRadians)==0?undefined:
+                (lineEnd.rightAscensionOrLatitudeRadians-lineStart.rightAscensionOrLatitudeRadians)/(
+                 lineEnd.declinationOrLongitudeRadians - lineStart.declinationOrLongitudeRadians);
+            if (m==undefined) { // ie vertical, with two declinations the same
+                if (lineEnd.rightAscensionOrLatitudeRadians >rectangleTopRight.rightAscensionOrLatitudeRadians && 
+                        lineStart.rightAscensionOrLatitudeRadians >rectangleTopRight.rightAscensionOrLatitudeRadians  ) {
+                    return undefined;
+                }
+                if (lineEnd.rightAscensionOrLatitudeRadians <rectangleBottomLeft.rightAscensionOrLatitudeRadians && 
+                        lineStart.rightAscensionOrLatitudeRadians <rectangleBottomLeft.rightAscensionOrLatitudeRadians  ) {
+                    return undefined;
+                }
+                if (lineEnd.rightAscensionOrLatitudeRadians > lineStart.rightAscensionOrLatitudeRadians) {
+                    var newStart;
+                    if (lineStart.rightAscensionOrLatitudeRadians > rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                        newStart=lineStart;
+                    } else {
+                        newStart={declinationOrLongitudeRadians:lineStart.declinationOrLongitudeRadians, 
+                            rightAscensionOrLatitudeRadians:rectangleBottomLeft.rightAscensionOrLatitudeRadians}
+                    }
+                    var newEnd;
+                    if (lineEnd.rightAscensionOrLatitudeRadians < rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                        newEnd=lineEnd;
+                    } else {
+                        newEnd = {declinationOrLongitudeRadians:lineStart.declinationOrLongitudeRadians,
+                            rightAscensionOrLatitudeRadians:rectangleTopRight.rightAscensionOrLatitudeRadians}
+                    }
+                    return {start:newStart, end:newEnd};
+                } else {
+                    var newEnd;
+                    if (lineEnd.rightAscensionOrLatitudeRadians > rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                        newEnd=lineEnd;
+                    } else {
+                        newEnd={declinationOrLongitudeRadians:lineEnd.declinationOrLongitudeRadians, 
+                            rightAscensionOrLatitudeRadians:rectangleBottomLeft.rightAscensionOrLatitudeRadians}
+                    }
+                    var newStart;
+                    if (lineStart.rightAscensionOrLatitudeRadians < rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                        newStart=lineStart;
+                    } else {
+                        newStart = {declinationOrLongitudeRadians:lineStart.declinationOrLongitudeRadians,
+                            rightAscensionOrLatitudeRadians:rectangleTopRight.rightAscensionOrLatitudeRadians}
+                    }
+                    return {start:newStart, end:newEnd};
+                }
+               // done
+               
+            } else {
+                var newStart;
+                var newEnd;
+                 var c = lineEnd.rightAscensionOrLatitudeRadians - m * lineEnd.declinationOrLongitudeRadians
+                // y=mx+c, y=right ascension, x=declination, line does not extend beyond points.
+               if (m==0) {
+                    if (lineStart.declinationOrLongitudeRadians < lineEnd.declinationOrLongitudeRadians) {
+                        if (lineStart.declinationOrLongitudeRadians < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                            newStart={declinationOrLongitudeRadians:rectangleBottomLeft.declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:lineStart.rightAscensionOrLatitudeRadians}
+                        } else if (lineStart.declinationOrLongitudeRadians > rectangleTopRight.declinationOrLongitudeRadians) {
+                            return undefined;
+                        } else {
+                            newStart=lineStart;
+                        }
+                    } else {
+                        if (lineStart.declinationOrLongitudeRadians > rectangleTopRight.declinationOrLongitudeRadians) {
+                            newStart={declinationOrLongitudeRadians:rectangleTopRight.declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:lineStart.rightAscensionOrLatitudeRadians}
+                        } else if (lineStart.declinationOrLongitudeRadians < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                            return undefined;
+                        } else {
+                            newStart=lineStart;
+                        }
+                    }
+                    if (lineStart.declinationOrLongitudeRadians > lineEnd.declinationOrLongitudeRadians) {
+                        if (lineEnd.declinationOrLongitudeRadians < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                            newEnd={declinationOrLongitudeRadians:rectangleBottomLeft.declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:lineEnd.rightAscensionOrLatitudeRadians}
+                        } else if (lineEnd.declinationOrLongitudeRadians > rectangleTopRight.declinationOrLongitudeRadians) {
+                            return undefined;
+                        } else {
+                            newEnd=lineEnd;
+                        }
+                    } else {
+                        if (lineEnd.declinationOrLongitudeRadians > rectangleTopRight.declinationOrLongitudeRadians) {
+                            newEnd={declinationOrLongitudeRadians:rectangleTopRight.declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:lineEnd.rightAscensionOrLatitudeRadians}
+                        } else if (lineEnd.declinationOrLongitudeRadians < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                            return undefined;
+                        } else {
+                            newEnd=lineEnd;
+                        }
+                    }
+               } else {
+                    newStart=restrictPoint(lineStart, m, c, rectangleBottomLeft, rectangleTopRight)
+                    newEnd=restrictPoint(lineEnd, m, c, rectangleBottomLeft, rectangleTopRight)
+                    if (newStart==undefined || newEnd==undefined) {
+                        return undefined;
+                    }
+               }
+                return {start:newStart, end:newEnd};
+
+            }
+        }
+
+        function restrictPoint(point, m, c, rectangleBottomLeft, rectangleTopRight) {
+                if (point.declinationOrLongitudeRadians < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                    if (point.rightAscensionOrLatitudeRadians < rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                        // bottom left
+                        if (within(intersectDeclinationOrLongitudeRadians(rectangleBottomLeft.declinationOrLongitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectDeclinationOrLongitudeRadians(rectangleBottomLeft.declinationOrLongitudeRadians, m, c)
+                        } else if (within(intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c)
+                        } else {
+                            return undefined;
+                        }
+                    } else if (point.rightAscensionOrLatitudeRadians > rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                        // Top left
+                        // bottom left
+                        if (within(intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c)
+                        } else if (within(intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c)
+                        } else {
+                            return undefined;
+                        }
+                    } else {
+                        // center left
+                        return intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c)
+                    }
+                } else if (point.declinationOrLongitudeRadians > rectangleTopRight.declinationOrLongitudeRadians) {
+                    if (point.rightAscensionOrLatitudeRadians < rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                        // right bottom
+                        if (within(intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c)
+                        } else if (within(intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectRightAscensionOrLatitudeRadians(rectangleBottomLeft.rightAscensionOrLatitudeRadians, m, c)
+                        } else {
+                            return undefined;
+                        }
+                    } else if (point.rightAscensionOrLatitudeRadians > rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                        // right top
+                        if (within(intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c)
+                        } else if (within(intersectRightAscensionOrLatitudeRadians(rectangleTopRight.rightAscensionOrLatitudeRadians, m, c), rectangleBottomLeft, rectangleTopRight, 0.1)) {
+                            return intersectRightAscensionOrLatitudeRadians(rectangleTopRight.rightAscensionOrLatitudeRadians, m, c)
+                        } else {
+                            return undefined;
+                        }
+                    } else {
+                        return intersectRightAscensionOrLatitudeRadians(rectangleTopRight.rightAscensionOrLatitudeRadians, m, c)
+                    }
+                } else {
+                    if (point.rightAscensionOrLatitudeRadians < rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                        // center bottom
+                        return intersectDeclinationOrLongitudeRadians(rectangleBottomLeft.declinationOrLongitudeRadians, m, c)
+                    } else if (point.rightAscensionOrLatitudeRadians > rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                        // center top
+                        return intersectDeclinationOrLongitudeRadians(rectangleTopRight.declinationOrLongitudeRadians, m, c)
+                    } else {
+                        return point;
+                    }
+                }
+                
+        }
+
+        function intersectDeclinationOrLongitudeRadians(declinationOrLongitudeRadians, m, c) {
+            if (m==undefined) return undefined;
+            return {declinationOrLongitudeRadians:declinationOrLongitudeRadians, rightAscensionOrLatitudeRadians:m*declinationOrLongitudeRadians+c}
+        }
+        function intersectRightAscensionOrLatitudeRadians(rightAscensionOrLatitudeRadians, m, c) {
+            if (m==0) return undefined;
+            return {declinationOrLongitudeRadians: rightAscensionOrLatitudeRadians/m-c, rightAscensionOrLatitudeRadians:rightAscensionOrLatitudeRadians}
+        }
+
+        function within(point, rectangleBottomLeft, rectangleTopRight, tolerance) {
+            if (point==undefined) return false;
+            if (point.declinationOrLongitudeRadians-tolerance < rectangleBottomLeft.declinationOrLongitudeRadians) {
+                return false;
+            }
+            if (point.declinationOrLongitudeRadians+tolerance > rectangleTopRight.declinationOrLongitudeRadians) {
+                return false;
+            }
+            if (point.rightAscensionOrLatitudeRadians-tolerance < rectangleBottomLeft.rightAscensionOrLatitudeRadians) {
+                return false;
+            }
+            if (point.rightAscensionOrLatitudeRadians+tolerance > rectangleTopRight.rightAscensionOrLatitudeRadians) {
+                return false;
+            }
+            return true;
+        }
+
+        function invertTranslation(translation) {
+            return {
+                X:(translation.X)?-translation.X:0,
+                Y:(translation.Y)?-translation.Y:0,
+                Z:(translation.Z)?-translation.Z:0
+            }
+        }
+
+
+        function translate(xyz, translation) {
+            var newXyz={
+                X:xyz.X + (translation.X?translation.X:0),
+                Y:xyz.Y + (translation.Y?translation.Y:0),
+                Z:xyz.Z + (translation.Z?translation.Z:0),
+            }
+            return newXyz
+        }
+
+        function roundToDp(number, dp) {
+            var multiple = Math.pow(10, dp);
+            var multiplied=Math.floor(number*multiple);
+            return multiplied/multiple;
+        }
+        
+        class StarSystem {
+            constructor(names, starSystems) {
+                this.id="StarSystem:"+Math.random()+":"+Math.random();
+                this.names=names;
+                this.starSystems=starSystems;
+            }
+            getName() {
+                return this.names[0]
+            }
+            getClass() {
+                return this.starSystems[0].spectralClassLetter
+            }
+            getTotalMass() {
+                var totalWeight=0;
+                for (let star of this.starSystems) {
+                    var weightedMass=star.massEstimate?star.massEstimate:1;
+                    totalWeight += weightedMass
+                }
+                return totalWeight;
+            }
+            getWeightedStromgrenRadiusAtNeLy(ne) {
+                var res=0;
+                for (let star of this.starSystems) {
+                    if (star.stromgrenRadiusThreePercentParsec) {
+                        res=res+ (star.stromgrenRadiusThreePercentParsec*3.2616 * Math.pow((0.03/ne), (2/3))) // this is wrong, it doesn't add like that
+                    }
+                }
+                return res;
+            }
+            getWieghtedEquitorialXyzLocation() {
+                var totalWeightedX=0;
+                var totalWeightedY=0;
+                var totalWeightedZ=0;
+                var totalWeight=0;
+                for (let star of this.starSystems) {
+                    var weightedMass=star.massEstimate?star.massEstimate:1;
+                    totalWeightedX+= star.equitorialRectangular.X * weightedMass
+                    totalWeightedY+= star.equitorialRectangular.Y * weightedMass
+                    totalWeightedZ+= star.equitorialRectangular.Z * weightedMass
+                    totalWeight += weightedMass
+                }
+                return {X:totalWeightedX/totalWeight, Y:totalWeightedY/totalWeight, Z:totalWeightedZ/totalWeight}
+            }
+        }
+        
+        window.starSystems = [];
+        window.starSystems.push(new StarSystem(['Sol'], [
+            new Star(['Sol'], '00 00 00.0', '+00 00 00', 1000000000000000000000, 0.0, 'G', 5.0, 4.83, 1.00)
+        ]))
+        
+        window.starSystems.push(new StarSystem(['Alpha Centauri'], [
+            new Star(['Proxima Centauri'], '14 29 43.0', '-62 40 46', 0.76885, 0.00029, 'M', 5.0, 15.48, 0.11),
+            new Star(['Alpha Centauri A', 'Rigel Kentaurus'], '14 39 36.5', '-60 50 02', 0.74723, 0.00117  , 'G', 2.0, 4.38, 1.14),
+            new Star(['Alpha Centauri B', 'Toliman'], '14 39 35.1', '-60 50 14', 0.74723, 0.00117, 'K', 0.0, 5.71, 0.92)
+        ]))
+        window.starSystems.push(new StarSystem(['Barnard\'s Star'], [
+            new Star(['Barnard\'s Star'], '17 57 48.5', '+04 41 36', 0.5455, 0.00029, 'M', 3.5, 13.25, 0.16)
+        ]))
+        
+        window.starSystems.push(new StarSystem(['Wolf 359'], [
+            new Star(['Wolf 359'], '10 56 29.2', '+07 00 53', 0.41910, 0.00210, 'M', 5.5, 16.64, 0.09)
+        ]))
+        window.starSystems.push(new StarSystem(['Lalande 21185'], [
+            new Star(['Lalande 21185'], '11 03 20.2', '+35 58 12', 0.39325, 0.00057, 'M', 2.0, 10.44, 0.46)
+        ]))
+        window.starSystems.push(new StarSystem(['Sirius'], [
+            new Star(['Sirius'], '06 45 08.9', '-16 42 58', 0.38002, 0.00128, 'A', 1.0, 1.47, 1.99, {stromgrenRadiusThreePercentParsec:2.17}),
+            new Star(['Sirius B'], '06 45 08.9', '-16 42 58', 0.38002, 0.00128, 'DA', 2, 11.34, 1.0, {stromgrenRadiusThreePercentParsec:4.12})
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 65'], [
+            new Star(['BL Ceti'], '01 39 01.3', '-17 57 01', 0.37370, 0.00270, 'M', 5.5, 15.47, 0.11),
+            new Star(['UV Ceti'], '01 39 01.3', '-17 57 01', 0.37370, 0.00270, 'M', 6.0, 16.94, 0.10)
+        ]))
+        window.starSystems.push(new StarSystem(['Ross 154'], [
+            new Star(['Ross 154'], '+44 10 30', '-23 50 10', 0.33722, 0.00197, 'M', 3.5, 13.08, 0.17)
+        ]))
+        window.starSystems.push(new StarSystem(['Ross 248'], [
+            new Star(['Ross 248'], '23 41 54.7', '+35 58 12', 0.31637, 0.00055, 'M', 5.5, 14.79, 0.12)
+        ]))
+        window.starSystems.push(new StarSystem(['Epsilon Eridani'], [
+            new Star(['Epsilon Eridani'], '03 32 55.8', '-09 27 30', 0.31122, 0.00057, 'K', 2.0, 6.20, 0.85)
+        ]))
+        window.starSystems.push(new StarSystem(['Lacaille 9352'], [
+            new Star(['Lacaille 9352'], '23 05 52.0', '-35 51 1', 0.30508, 0.00070, 'M', 1.0, 9.76, 0.53)
+        ]))
+        window.starSystems.push(new StarSystem(['Ross 128'], [
+            new Star(['Ross 128'], '11 47 44.4', '+00 48 16', 0.29814, 0.00137, 'M', 4.0, 13.53, 0.16)
+        ]))
+        
+        
+        window.starSystems.push(new StarSystem(['EZ Aquarii'], [
+            new Star(['EZ Aquarii A'], '22 38 33.4', '-15 18 07', 0.28950, 0.00440, 'M', 5.0, 15.33, 0.11),
+            new Star(['EZ Aquarii B'], '22 38 33.4', '-15 18 07', 0.28950, 0.00440, 'M', null, 15.58, 0.11),
+            new Star(['EZ Aquarii C'], '22 38 33.4', '-15 18 07', 0.28950, 0.00440, 'M', null, 17.37, 0.08)
+        ]))
+        window.starSystems.push(new StarSystem(['61 Cygni'], [
+            new Star(['61 Cygni A'], '21 06 53.9', '+38 44 58', 0.28608, 0.00048, 'K', 5.0, 7.48, 0.70),
+            new Star(['61 Cygni B'], '21 06 55.3', '+38 44 31', 0.28608, 0.00048, 'K', 7.0, 8.31, 0.63)
+        ]))
+        window.starSystems.push(new StarSystem(['Procyon'], [
+            new Star(['Procyon'], '07 39 18.1', '+05 13 30', 0.28517, 0.00064, 'F', 5.0, 2.65, 1.57),
+            new Star(['Procyon B'], '07 39 18.1', '+05 13 30', 0.28517, 0.00064, 'DQZ', null, 12.98, 0.5, {stromgrenRadiusThreePercentParsec:0.05})
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 725'], [
+            new Star(['Gliese 725 A'], '18 42 46.7', '+59 37 49', 0.28383, 0.00146, 'M', 3.0, 11.17, 0.35),
+            new Star(['Gliese 725 B'], '18 42 46.9', '+59 37 37', 0.28383, 0.00146, 'M', 3.5, 11.96, 0.26)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 15'], [
+            new Star(['GX Andromedae'], '00 18 22.9', '+44 01 23', 0.27987, 0.00060, 'M', 1.5, 10.31 , 0.49),
+            new Star(['GQ Andromedae'], '00 18 22.9', '+44 01 23', 0.27987, 0.00060, 'M', 3.5, 13.30, 0.16)
+        ]))
+        
+         
+        window.starSystems.push(new StarSystem(['Epsilon Indi'], [
+            new Star(['Epsilon Indi A'], '22 03 21.7', '-56 47 10', 0.27607, 0.00028, 'K', 4.0, 15.33, 0.77),
+            new Star(['Epsilon Indi B'], '22 04 10.5', '-56 46 58', 0.27607, 0.00028, 'T', 1.0, null, 0.03),
+            new Star(['Epsilon Indi C'], '22 04 10.5', '-56 46 58', 0.27607, 0.00028, 'T', 6.0, null, 0.03)
+        ]))
+        window.starSystems.push(new StarSystem(['DX Cancri'], [
+            new Star(['DX Cancri'], '08 29 49.5', '+26 46 37', 0.27580, 0.00300 , 'M', 6.0, 17.10, 0.09)
+        ]))
+        window.starSystems.push(new StarSystem(['Tau Ceti'], [
+            new Star(['Tau Ceti'], '01 44 04.1', '-15 56 15', 0.27397, 0.00017, 'G', 8.5, 6.58, 0.92)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 1061'], [
+            new Star(['Gliese 1061'], '03 35 59.7', '-44 30 45', 0.27201, 0.00130, 'M', 5.0, 15.26, 0.11)
+        ]))
+        
+        
+        window.starSystems.push(new StarSystem(['YZ Ceti'], [
+            new Star(['YZ Ceti'], '01 12 30.6', '-16 59 56', 0.26908, 0.00299, 'M', 4.0, 14.25, 0.13)
+        ]))
+        window.starSystems.push(new StarSystem(['Luytenz\'s Star'], [
+            new Star(['Luytenz\'s Star'], '07 27 24.5', '+05 13 33', 0.26623, 0.00066, 'M', 3.5, 11.98, 0.26)
+        ]))
+        window.starSystems.push(new StarSystem(['SCR 1845-6357'], [
+            new Star(['SCR 1845-6357 A'], '18 45 05.3', '-63 57 48', 0.25950, 0.00111, 'M', 8.5, 19.47 , 0.07),
+            new Star(['SCR 1845-6357 B'], '18 45 02.6', '-63 57 52', 0.25950, 0.00111, 'T', 6.0, null, 0.03)
+        ]))
+        window.starSystems.push(new StarSystem(['SO 0253+1652'], [
+            new Star(['SO 0253+1652'], '02 53 00.9', '+16 52 53', 0.25941,0.00089, 'M', 6.5, 17.21, 0.08)
+        ]))
+        window.starSystems.push(new StarSystem(['Kapteyn\'s Star'], [
+            new Star(['Kapteyn\'s Star'], '05 11 40.6', '-45 01 06', 0.25567, 0.00091, 'M', 2.0, 10.89, 0.39)
+        ]))
+        window.starSystems.push(new StarSystem(['AX Microscopii'], [
+            new Star(['AX Microscopii'], '21 17 15.3', '-38 52 03', 0.25344, 0.00080, 'K', 9.0, 8.69, 0.60)
+        ]))
+        window.starSystems.push(new StarSystem(['DEN 1048-3956'], [
+            new Star(['DEN 1048-3956'], '10 48 14.7', '-39 56 06', 0.24853, 0.00118, 'M', 8.5, 17.39, 0.07)
+        ]))
+        window.starSystems.push(new StarSystem(['Kruger 60'], [
+            new Star(['Kruger 60 A'], '22 27 59.5', '+57 41 45', 0.24806, 0.00139, 'M', 3.0, 11.76 , 0.28),
+            new Star(['Kruger 60 B'], '22 27 59.5', '+57 41 45', 0.24806, 0.00139, 'M', 4.0, 13.38, 0.16)
+        ]))
+        window.starSystems.push(new StarSystem(['Ross 614'], [
+            new Star(['Ross 614 A'], '06 29 23.4', '-02 48 50', 0.24444, 0.00092, 'M', 4.5, 13.12 , 0.17),
+            new Star(['Ross 614 B'], '06 29 23.4', '-02 48 50', 0.24444, 0.00092, 'M', null, 16.20, 0.10)
+        ]))
+        window.starSystems.push(new StarSystem(['Wolf 1061'], [
+            new Star(['Wolf 1061'], '16 30 18.1', '-12 39 45', 0.23438, 0.00150, 'M', 3.5, 11.95, 0.26)
+        ]))
+        
+        
+        window.starSystems.push(new StarSystem(['van Maanen\'s Star'], [
+            new Star(['van Maanen\'s Star'], '00 49 09.9', '+05 23 19', 0.23270, 0.00181, 'DZ', 7, 14.23, 0.5, {stromgrenRadiusThreePercentParsec:0.001})
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 1'], [
+            new Star(['Gliese 1'], '00 05 24.4', '-37 21 27', 0.23032, 0.00090, 'M', 1.5, 10.35, 0.48)
+        ])) 
+        window.starSystems.push(new StarSystem(['Wolf 424'], [
+            new Star(['Wolf 424 A'], '12 33 17.2', '+09 01 15', 0.22790, 0.00460, 'M', 5.0, 15.03 , 0.12),
+            new Star(['Wolf 424 B'], '12 33 17.2', '+09 01 15', 0.22790, 0.00460, 'M', null, 15.02, 0.12)
+        ]))
+        window.starSystems.push(new StarSystem(['TZ Arietis'], [
+            new Star(['TZ Arietis'], '02 00 13.2', '+13 03 08', 0.22480, 0.00290, 'M', 4.0, 14.07, 0.14)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 687'], [
+            new Star(['Gliese 687'], '17 36 25.9', '+68 20 21', 0.22047, 0.00083, 'M', 3.0, 10.89, 0.39)
+        ]))
+        window.starSystems.push(new StarSystem(['LHS 292'], [
+            new Star(['LHS 292'], '10 48 12.6', '-11 20 14', 0.22030, 0.00360, 'M', 6.5, 17.45, 0.08)
+        ]))
+        window.starSystems.push(new StarSystem(['G 208-044'], [
+            new Star(['G 208-044 A'], '19 53 54.2', '+44 24 55', 0.22020, 0.00100, 'K', 5.5, 15.18, 0.11),
+            new Star(['G 208-044 B'], '19 53 54.2', '+44 24 55', 0.22020, 0.00100, 'M', null, 18.47, 0.73),
+            new Star(['G 208-044 C'], '19 53 54.2', '+44 24 56', 0.22020, 0.00100, 'M', 6.0, 15.72, 0.10)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 674'], [
+            new Star(['Gliese 674'], '17 28 39.9', '-46 53 43', 0.22011, 0.00139, 'M', 2.5, 11.08, 0.36)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 440'], [
+            new Star(['Gliese 440'], '11 45 42.9', '-64 50 29', 0.21612, 0.00109, 'DQ', 6, 11.50, 0.50, {stromgrenRadiusThreePercentParsec:0.05})
+        ])) 
+        window.starSystems.push(new StarSystem(['Ross 780'], [
+            new Star(['Ross 780'], '22 53 16.7', '-14 15 49', 0.21447, 0.00057, 'M', 3.5, 11.84, 0.27)
+        ]))
+        
+         
+        window.starSystems.push(new StarSystem(['Gliese 1002'], [
+            new Star(['Gliese 1002'], '00 06 43.8', '-07 32 22', 0.21300, 0.00360, 'M', 5.0, 15.41, 0.11)
+        ])) 
+        window.starSystems.push(new StarSystem(['LHS 288'], [
+            new Star(['LHS 288'], '10 44 21.2', '-61 12 36', 0.20970, 0.00265, 'M', 5.5, 15.53, 0.11)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 412'], [
+            new Star(['Gliese 412 A'], '11 05 28.6', '+43 31 36', 0.20567, 0.00093, 'M', 1.0, 10.34 , 0.48),
+            new Star(['Gliese 412 B'], '11 05 30.4', '+43 31 18', 0.20567, 0.00093, 'M', 5.5, 16.01, 0.10)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 380'], [
+            new Star(['Gliese 380'], '10 11 22.1', '+49 27 15', 0.20553, 0.00049, 'K', 7.0, 8.15, 0.64)
+        ]))  
+        window.starSystems.push(new StarSystem(['Gliese 388'], [
+            new Star(['Gliese 388'], '10 19 36.4', '+19 52 10', 0.20460, 0.00280, 'M', 2.5, 10.87, 0.39)
+        ]))  
+        window.starSystems.push(new StarSystem(['Gliese 832'], [
+            new Star(['Gliese 832'], '21 33 34.0', '-49 00 32', 0.20203, 0.00100, 'M', 1.5, 10.19, 0.50)
+        ]))  
+        window.starSystems.push(new StarSystem(['LP 944-020'], [
+            new Star(['LP 944-020'], '03 39 35.2', '-35 25 41', 0.20140, 0.00421, 'M', 9.0, 20.21, 0.07)
+        ]))  
+        window.starSystems.push(new StarSystem(['DEN 0255-4700'], [
+            new Star(['DEN 0255-4700'], '02 55 03.7', '-47 00 52', 0.20137, 0.00389, 'L', 7.5, 24.44, 0.05)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 166', 'omicron 2 Eridani'], [
+            new Star(['Gliese 166 A'], '04 15 16.3', '-07 39 10', 0.20065, 0.00023, 'K', 0.5, 5.94, 0.89),
+            new Star(['Gliese 166 B'], '04 15 22.0', '-07 39 35', 0.20065, 0.00023, 'DA', 4, 11.03, 0.50, {stromgrenRadiusThreePercentParsec:1.17}),
+            new Star(['Gliese 166 C'], '04 15 22.0', '-07 39 35', 0.20065, 0.00023, 'M', 4.0, 12.75, 0.18)
+        ]))  
+        window.starSystems.push(new StarSystem(['EV Lacertae', 'Gliese 873'], [
+            new Star(['EV Lacertae', 'Gliese 873'], '22 46 49.7', '+44 20 02', 0.19821, 0.00084, 'M', 3.5, 11.71, 0.28)
+        ])) 
+        
+         
+        window.starSystems.push(new StarSystem(['Gliese 682'], [
+            new Star(['Gliese 682'], '17 37 03.7', '-44 19 09', 0.19809, 0.00206, 'M', 4.0, 12.43, 0.20)
+        ]))
+        window.starSystems.push(new StarSystem(['70 Ophiuchi'], [
+            new Star(['70 Ophiuchi A'], '18 05 27.3', '+02 30 00', 0.19596, 0.00087, 'K', 0.0, 5.67 , 0.92),
+            new Star(['70 Ophiuchi B'], '18 05 27.3', '+02 30 00', 0.19596, 0.00087, 'K', 5, 7.47, 0.70)
+        ])) 
+        window.starSystems.push(new StarSystem(['Altair'], [
+            new Star(['Altair'], '19 50 47.0', '+08 52 06', 0.19540, 0.00046, 'A', 7.0, 2.22, 1.71, {stromgrenRadiusThreePercentParsec:0.3})
+        ])) 
+        window.starSystems.push(new StarSystem(['EI Cancri'], [
+            new Star(['EI Cancri A'], '08 58 14.9', '+19 45 43', 0.19120, 0.00250, 'M', 5.5, 15.46 , 0.22),
+            new Star(['EI Cancri B'], '08 58 14.9', '+19 45 49', 0.19120, 0.00250, 'M', null, 16.32, 0.10)
+        ])) 
+        
+        
+        window.starSystems.push(new StarSystem(['Gliese 3323'], [
+            new Star(['Gliese 3323'], '06 00 03.5', '+02 42 24', 0.19077, 0.00186, 'M', 3.5, 12.71 , 0.19)
+        ])) 
+        window.starSystems.push(new StarSystem(['LHS 1723'], [
+            new Star(['LHS 1723'], '05 01 57.4', '-06 56 47', 0.18792, 0.00126, 'M', 4.0, 13.59, 0.15)
+        ])) 
+        window.starSystems.push(new StarSystem(['2MA 0939-2448'], [
+            new Star(['2MA 0939-2448'], '09 39 35.5', '-24 48 28', 0.18730, 0.00460, 'T', 8.0, null, 0.03)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 445'], [
+            new Star(['Gliese 445'], '11 47 41.4', '+78 41 28', 0.18726, 0.00164, 'M', 3.5, 12.15, 0.24)
+        ])) 
+        window.starSystems.push(new StarSystem(['Wolf 498'], [
+            new Star(['Wolf 498'], '13 45 43.8', '+14 53 29', 0.18472, 0.00074, 'M', 1.0, 9.79 , 0.53)
+        ]))  
+        window.starSystems.push(new StarSystem(['Stein 2051'], [
+            new Star(['Stein 2051 A'], '04 31 11.8', '+58 58 38', 0.18052, 0.00078, 'M', 4.0, 12.32 , 0.20),
+            new Star(['Stein 2051 B'], '04 31 11.8', '+58 58 38', 0.18052, 0.00078, 'DC', 5, 13.71, 0.50, {stromgrenRadiusThreePercentParsec:0.01})
+        ])) 
+        
+         
+        window.starSystems.push(new StarSystem(['Gliese 251'], [
+            new Star(['Gliese 251'], '06 54 49.0', '+33 16 05', 0.17811, 0.00143, 'M', 3.0, 11.27 , 0.34)
+        ]))   
+        window.starSystems.push(new StarSystem(['2MA 1835+3259'], [
+            new Star(['2MA 1835+3259'], '18 35 37.9', '+32 59 54', 0.17650, 0.00050, 'M', 8.5, 19.50 , 0.07)
+        ]))   
+        window.starSystems.push(new StarSystem(['Gliese 205'], [
+            new Star(['Gliese 205'], '05 31 27.4', '-03 40 38', 0.17599, 0.00104, 'M', 1.0, 9.18 , 0.57)
+        ]))   
+        window.starSystems.push(new StarSystem(['LP 816-060'], [
+            new Star(['LP 816-060'], '20 52 33.0', '-16 58 29', 0.17503, 0.00340, 'M', 3.5, 12.72 , 0.19)
+        ]))   
+        window.starSystems.push(new StarSystem(['2MA 0415-0935'], [
+            new Star(['2MA 0415-0935'], '04 15 19.5', '-09 35 07', 0.17434, 0.00276, 'T', 8.0, null , 0.03)
+        ]))   
+        window.starSystems.push(new StarSystem(['Sigma Draconis', 'Gliese 764'], [
+            new Star(['Sigma Draconis', 'Gliese 764'], '19 32 21.6', '+69 39 40', 0.17379, 0.00018, 'G', 9.0, 5.87 , 0.89)
+        ]))  
+        
+        
+         
+        window.starSystems.push(new StarSystem(['Gliese 229'], [
+            new Star(['Gliese 229 A'], '06 10 34.6', '-21 51 53', 0.17377, 0.00097, 'M', 1.5,  9.34 , 0.56),
+            new Star(['Gliese 229 B'], '06 10 34.6', '-21 51 53', 0.17377, 0.00097, 'T', 6.0, null, 0.03)
+        ]))   
+        window.starSystems.push(new StarSystem(['Ross 47'], [
+            new Star(['Ross 47'], '05 42 09.3', '+12 29 22', 0.17150, 0.00100, 'M', 4.0, 12.74 , 0.18)
+        ]))   
+        window.starSystems.push(new StarSystem(['Gliese 693'], [
+            new Star(['Gliese 693'], '17 46 34.2', '-57 19 09', 0.17110, 0.00222, 'M', 3.0, 11.93 , 0.26)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 752'], [
+            new Star(['Gliese 752 A', 'Wolf 1055'], '19 16 55.3', '+05 10 08', 0.17096, 0.00052, 'M', 2.5, 10.26 , 0.50),
+            new Star(['Gliese 752 B'], '19 16 55.3', '+05 10 08', 0.17096, 0.00052, 'M', 8.0, 18.61, 0.07)
+        ]))  
+        window.starSystems.push(new StarSystem(['Gliese 570'], [
+            new Star(['Gliese 570 A'], '14 57 28.0', '-21 24 56', 0.17062, 0.00067, 'K', 4.0, 6.80 , 0.78),
+            new Star(['Gliese 570 B'], '14 57 26.5', '-21 24 41', 0.17062, 0.00067, 'M', 1.5, 9.46, 0.55),
+            new Star(['Gliese 570 C'], '14 57 26.5', '-21 24 41', 0.17062, 0.00067, 'M', null, 11.12 , 0.36),
+            new Star(['Gliese 570 D'], '14 57 15.0', '-21 21 50', 0.17062, 0.00067, 'T', 7.0, null, 0.03)
+        ]))  
+        
+          
+        window.starSystems.push(new StarSystem(['Gliese 754'], [
+            new Star(['Gliese 754'], '19 20 48.0', '-45 33 27', 0.16917, 0.00153, 'M', 4.0, 13.37 , 0.16)
+        ]))    
+        window.starSystems.push(new StarSystem(['Gliese 588'], [
+            new Star(['Gliese 588'], '15 32 12.9', '-41 16 32', 0.16852, 0.00127, 'M', 2.5, 10.44 , 0.46)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 1005'], [
+            new Star(['Gliese 1005 A'], '00 15 28.1', '-16 08 02', 0.16835, 0.00090, 'M', 3.5, 12.73 , 0.18),
+            new Star(['Gliese 1005 B'], '00 15 28.1', '-16 08 02', 0.16835, 0.00090, 'M', null, 15.15, 0.11)
+        ]))  
+        window.starSystems.push(new StarSystem(['Eta Cassiopei', 'Gliese 34'], [
+            new Star(['Eta Cassiopei A', 'Gliese 34 A'], '00 49 06.3', '+57 48 55', 0.16823, 0.00046, 'G', 3, 4.59 , 1.11),
+            new Star(['Eta Cassiopei B', 'Gliese 34 B'], '00 49 06.3', '+57 48 55', 0.16823, 0.00046, 'K', 7.0, 8.34, 0.60)
+        ]))   
+        window.starSystems.push(new StarSystem(['36 Ophiuchi'], [
+            new Star(['36 Ophiuchi A'], '17 15 21.0', '-26 36 10', 0.16812, 0.00040, 'K', 1.5, 6.20 , 0.85),
+            new Star(['36 Ophiuchi B'], '17 15 21.0', '-26 36 10', 0.16812, 0.00040, 'K', null, 6.21, 0.85),
+            new Star(['36 Ophiuchi D'], '17 16 13.4', '-26 32 46', 0.16812, 0.00040, 'K', 5.0, 7.45, 0.71)
+        ]))  
+        
+           
+        window.starSystems.push(new StarSystem(['Gliese 908'], [
+            new Star(['Gliese 908'], '23 49 12.5', '+02 24 04', 0.16802, 0.00118, 'M', 1.0, 10.11 , 0.51)
+        ]))    
+        window.starSystems.push(new StarSystem(['Ross 882', 'Gliese 285'], [
+            new Star(['Ross 882', 'Gliese 285'], '07 44 40.2', '+03 33 09', 0.16719, 0.00205, 'M', 4.0, 12.31, 0.20)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 783'], [
+            new Star(['Gliese 783 A'], '20 11 11.9', '-36 06 04', 0.16626, 0.00027, 'K', 2.5, 6.42, 0.82),
+            new Star(['Gliese 783 B'], '20 11 11.9', '-36 06 04', 0.16626, 0.00027, 'M', 4.0, 12.61, 0.19)
+        ])) 
+        window.starSystems.push(new StarSystem(['82 Eridani', 'Gliese 139'], [
+            new Star(['82 Eridani', 'Gliese 139'], '03 19 55.6', '-43 04 11', 0.16547, 0.00019, 'G', 8.0, 5.35 , 0.97)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 1221'], [
+            new Star(['Gliese 1221'], '17 48 06.7', '+70 52 29', 0.16470, 0.00240, 'DXP', 9, 15.30 , 0.5, {stromgrenRadiusThreePercentParsec:0.001})
+        ])) 
+        
+         
+        window.starSystems.push(new StarSystem(['Gliese 338'], [
+            new Star(['Gliese 338 A'], '09 14 22.8', '+52 41 12', 0.16373, 0.00252, 'M', 0.0, 6.42, 0.80),
+            new Star(['Gliese 338 B'], '09 14 24.7', '+52 41 11', 0.16373, 0.00252, 'K', 7.0, 8.77, 0.80)
+        ])) 
+        window.starSystems.push(new StarSystem(['Delta Pavonis', 'Gliese 780'], [
+            new Star(['Delta Pavonis', 'Gliese 780'], '20 08 43.6', '-66 10 55', 0.16371, 0.00017, 'G', 8.0, 4.62 , 1.1)
+        ])) 
+        window.starSystems.push(new StarSystem(['QY Aurigae', 'Gliese 780'], [
+            new Star(['QY Aurigae A', 'Gliese 780 A'], '07 10 01.8', '+38 31 46', 0.16341, 0.00178, 'M', 4.5, 13.12, 0.17),
+            new Star(['QY Aurigae B', 'Gliese 780 B'], '07 10 01.8', '+38 31 46', 0.16341, 0.00178, 'M', null, 13.52, 0.16)
+        ])) 
+        window.starSystems.push(new StarSystem(['2MA 0937+2931'], [
+            new Star(['2MA 0937+2931'], '09 37 34.9', '+29 31 41', 0.16330, 0.00160, 'T', 6.0, null , 0.03)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 784'], [
+            new Star(['Gliese 784'], '20 13 53.4', '-45 09 50', 0.16135, 0.00099, 'M', 0.0, 8.99 , 0.58)
+        ])) 
+        
+         
+        window.starSystems.push(new StarSystem(['HN Librae', 'Gliese 555'], [
+            new Star(['HN Librae', 'Gliese 555'], '14 34 16.8', '-12 31 10', 0.16078, 0.00198, 'M', 4.0, 12.35, 0.20)
+        ])) 
+        window.starSystems.push(new StarSystem(['EQ Pegasi', 'Gliese 896'], [
+            new Star(['EQ Pegasi A', 'Gliese 896 A'], '23 31 52.2', '+19 56 14', 0.15988, 0.00153, 'M', 3.5, 11.29, 0.33),
+            new Star(['EQ Pegasi B', 'Gliese 896 B'], '23 31 52.2', '+19 56 14', 0.15988, 0.00153, 'M', 4.5, 13.43, 0.16)
+        ]))
+        window.starSystems.push(new StarSystem(['Wolf 562', 'Gliese 581'], [
+            new Star(['Wolf 562', 'Gliese 581'], '15 19 26.8', '-07 43 20', 0.15780, 0.00176, 'M', 3.0, 11.56, 0.30)
+        ]))
+        
+        
+        window.starSystems.push(new StarSystem(['LHS 2090'], [
+            new Star(['LHS 2090'], '09 00 23.6', '+21 50 05', 0.15687, 0.00267, 'M', 6.0, 17.08, 0.09)
+        ]))
+        window.starSystems.push(new StarSystem(['LHS 337'], [
+            new Star(['LHS 337'], '12 38 49.1', '-38 22 54', 0.15678, 0.00199, 'M', 4.0, 13.73, 0.15)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 661'], [
+            new Star(['Gliese 661 A'], '17 12 07.9', '+45 39 57', 0.15632, 0.00128, 'M', 3.0, 10.90, 0.39),
+            new Star(['Gliese 661 B'], '17 12 07.9', '+45 39 57', 0.15632, 0.00128, 'M', null, 11.32, 0.33)
+        ]))
+        window.starSystems.push(new StarSystem(['WD 0552-041', 'Gliese 223.2'], [
+            new Star(['WD 0552-041', 'Gliese 223.2'], '05 55 09.7', '-04 10 17', 0.15605, 0.00075, 'DZ', 9, 15.44, 0.50, {stromgrenRadiusThreePercentParsec:0.001})
+        ]))
+        window.starSystems.push(new StarSystem(['G 180-060'], [
+            new Star(['G 180-060'], '16 31 18.4', '+40 51 54', 0.15600, 0.00400, 'M', 5.0, 15.73, 0.10)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 663'], [
+            new Star(['Wolf 630 A', 'Gliese 664 A'], '16 55 28.8', '-08 20 11', 0.15496, 0.00052, 'M', 2.5, 10.67, 0.42),
+            new Star(['Wolf 630 B', 'Gliese 664 B'], '16 55 28.8', '-08 20 11', 0.15496, 0.00052, 'M', null, 11.32, 0.33),
+            new Star(['Wolf 630 C', 'Gliese 664 D'], '16 55 28.8', '-08 20 11', 0.15496, 0.00052, 'M', null, 11.82, 0.27),
+            new Star(['Gliese 664 C'], '16 55 28.8', '-08 23 4', 0.15496, 0.00052, 'M', 7.0, 17.73, 0.08),
+            new Star(['Wolf 629', 'Gliese 663'], '-08 19 21', '+19 56 14', 0.15496, 0.00052, 'M', 3.0, 12.75, 0.18)
+        ]))
+        
+        
+        window.starSystems.push(new StarSystem(['Gliese 625'], [
+            new Star(['Gliese 625'], '16 25 24.6', '+54 18 15', 0.15314, 0.00092, 'M', 1.5, 11.03, 0.37)
+        ]))
+        window.starSystems.push(new StarSystem(['Gliese 1128'], [
+            new Star(['Gliese 1128'], '09 42 46.4', '-68 53 06', 0.15305, 0.00241, 'M', 4.0, 13.66, 0.15)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 1156', 'GL Virginis'], [
+            new Star(['Gliese 1156', 'GL Virginis'], '12 19 00.3', '+11 07 31', 0.15290, 0.00300, 'M', 4.5, 114.72, 0.12)
+        ])) 
+        window.starSystems.push(new StarSystem(['Gliese 892'], [
+            new Star(['Gliese 892'], '23 13 17.0', '+57 10 06', 0.15284, 0.00028, 'K', 3.0, 6.49, 0.81)
+        ])) 
+        window.starSystems.push(new StarSystem(['LHS 3003'], [
+            new Star(['LHS 3003'], '14 56 38.5', '-28 09 51', 0.15249, 0.00202, 'M', 7.0, 17.97, 0.08)
+        ])) 
+        
+        console.log(window.starSystems);
+        window.onload=function() {
+            window.viewpoint=new Viewpoint({X:0, Y:0, Z:0}, Math.PI/4, Math.PI/4, document.getElementById('canvas'), 70, document.getElementById('nearestStarsTable'))
+            window.viewpoint.paint(starSystemsToLinesWithObject(window.starSystems));
+            };
+    </script>
+    </head>
+    <body>
+        <p>Game Map</p>
+        <p>Nearest 100 star systems taken from the <a href="http://www.recons.org" >RECONS</a> website, the Research Consortium On Nearby Stars
+        </p>
+        <div class="row">
+            <section class="col col-md-8">
+                <canvas id="canvas" height="700" width="1000" onmousedown="startDragging(event)" onmouseup="stopDragging()" onwheel="zoom(event)"
+                    onmouseout="stopDragging()" onmousemove="maybeDrag(event)"></canvas>
+            </section>
+            <section class="col col-md-4">
+                <div class="row">
+                    <section class="col col-md-1">
+                        <label>X</label>
+                    </section>
+                    <section class="col col-md-2">
+                        <input type="number" class="wide" value="0" id="xDisplay" onchange="viewpoint.xyz.X=+this.value; viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                    <section class="col col-md-1">
+                        <label>Y</label>
+                    </section>
+                    <section class="col col-md-2">
+                        <input type="number" class="wide" value="0" id="yDisplay" onchange="viewpoint.xyz.Y=+this.value; viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                    <section class="col col-md-1">
+                        <label>Z</label>
+                    </section>
+                    <section class="col col-md-2">
+                        <input type="number" class="wide" value="0" id="zDisplay" onchange="viewpoint.xyz.Z=+this.value; viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                </div>
+                <div class="row">
+                    <section class="col col-md-4">
+                        <label>Depth of View</label>
+                    </section>
+                    <section class="col col-md-2">
+                        <input type="number" value="70" class="wide"  onchange="viewpoint.maxVision=+this.value; viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                    <section class="col col-md-2">
+                        <label>N<sub>e</sub></label>
+                    </section>
+                    <section class="col col-md-2">
+                        <input type="number" value="0.11"  step="0.01" class="wide"  onchange="ne=+this.value; viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                </div>
+                <div class="row">
+                    <section class="col col-md-5">
+                        <label>Visibility of Unvisitable worlds</label>
+                    </section>
+                    <section class="col col-md-7">
+                        <input type="range" min="0" max="100" value="30" class="slider" id="solidity" oninput=" viewpoint.paint(starSystemsToLinesWithObject(starSystems))">
+                    </section>
+                </div>
+                <div class="row">
+                    <section class="col col-md-12">
+                        <div style="overflow-y:auto;max-height:700px">
+                            <table class="table table-hover" id="nearestStarsTable">
+
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        </div>
+    </body>
+</html>
