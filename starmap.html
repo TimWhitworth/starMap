@@ -228,56 +228,46 @@
                 var height=this.canvasElement.height;
                 var ctx = canvas.getContext("2d");
                 ctx.clearRect(0,0, width, height);
+                var copiedLinesWithObject=[];
+                    for (let lwo of linesWithObjects) {
+                        copiedLinesWithObject.push(lwo)
+                        lwo.object.withinStromgren=this.withinStromgren(lwo, linesWithObjects)
+                    }
+                    copiedLinesWithObject.sort((x,y) => {
+                        var distanceX = rectangularDistance(x.object.getWieghtedEquitorialXyzLocation(), this.xyz);
+                        var distanceY = rectangularDistance(y.object.getWieghtedEquitorialXyzLocation(), this.xyz);
+                        if (x.object.withinStromgren) {
+                            if (y.object.withinStromgren) {
+
+                            } else {
+                                return 1;
+                            }
+                        } else {
+                            if (y.withinStromgren) {
+                                return -1;
+                            }
+                        }
+                        if (distanceX==distanceY) return 0;
+                        if (distanceX>distanceY) return 1;
+                        return -1;
+                    })
                 this.clickableCoords=[];
-                for (let lwo of linesWithObjects) {
+                for (let lwo of copiedLinesWithObject) {
                     var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
                     if (lwo.object.getWeightedStromgrenRadiusAtNeLy(ne)>0) {
                        // drawStromgrenSphere(lwo);
                     }
                 }
-                for (let lwo of linesWithObjects) {
+                for (let lwo of copiedLinesWithObject) {
                     var startXy=this.convertXyzViewpointRestrictedView(lwo.start)
                     var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
                     if (startXy && endXy && lwo.end.Z > -this.maxVision+this.xyz.Z) {
-                        if (this.highlight==lwo.object.id) {
-                            var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects)
-                            var topLeftx=endXy.x-14 -widthHeight.width/2;
-                            var topLefty=endXy.y-14;
-                            ctx.fillStyle='#ffff00'
-                            ctx.fillRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
-                            ctx.clearRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
-                            ctx.strokeStyle='black'
-                            ctx.lineWidth=2;
-                            ctx.strokeRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
-                            ctx.strokeRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
-                            ctx.lineWidth=1;
-                        }
+                        
                         var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects, false, false)
                         this.clickableCoords.push({topLeft:{x:endXy.x-widthHeight.width/2, y:endXy.y}, bottomRight:{x:endXy.x+widthHeight.width/2, y:endXy.y+widthHeight.height}, lwo:lwo})
                     }
                 }
-                for (let lwo of linesWithObjects) {
-                    var startXy=this.convertXyzViewpointRestrictedView(lwo.start)
-                    var endXy=this.convertXyzViewpointRestrictedView(lwo.end)
-                    if (startXy && endXy && lwo.end.Z > -this.maxVision+this.xyz.Z) {
-                        if (this.highlight==lwo.object.id) {
-                            var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects)
-                            var topLeftx=endXy.x-14 -widthHeight.width/2;
-                            var topLefty=endXy.y-14;
-                            ctx.fillStyle='#ffff00'
-                            ctx.fillRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
-                            ctx.clearRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
-                            ctx.strokeStyle='black'
-                            ctx.lineWidth=2;
-                            ctx.strokeRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
-                            ctx.strokeRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
-                            ctx.lineWidth=1;
-                        }
-                        var widthHeight=this.drawStarSystem(startXy, endXy, lwo, linesWithObjects, true, true)
-                        this.clickableCoords.push({topLeft:{x:endXy.x-widthHeight.width/2, y:endXy.y}, bottomRight:{x:endXy.x+widthHeight.width/2, y:endXy.y+widthHeight.height}, lwo:lwo})
-
-                    }
-                }
+               
             }
 
             drawStromgrenSphere(lwo) {
@@ -289,25 +279,50 @@
                // var vertRadius = 
             }
 
+            withinStromgren(lwo, linesWithObjects) {
+                var withinStromgrenSphereSoFar=false;
+                for (let stromSearchStart of linesWithObjects) {
+                    var weightedStromgren=stromSearchStart.object.getWeightedStromgrenRadiusAtNeLy(ne);
+                    var distanceFromObject=rectangularDistance(stromSearchStart.object.getWieghtedEquitorialXyzLocation(), lwo.object.getWieghtedEquitorialXyzLocation());
+                    if ( weightedStromgren> distanceFromObject) {
+                        withinStromgrenSphereSoFar=true;
+                    }
+                }
+                var withinStromgrenSphere = withinStromgrenSphereSoFar;
+                return withinStromgrenSphere;
+            }
+
             drawStarSystem(startXy, endXy, lwo, linesWithObjects, includeStromgren, rejectNonStromgren) {
                 var ctx = canvas.getContext("2d");
                 ctx.beginPath();
                         var totalVerticalIncrement=0;
                         var maxHorzIncrement=0;
-                        var withinStromgrenSphereSoFar=false;
-                        for (let stromSearchStart of linesWithObjects) {
-                            var weightedStromgren=stromSearchStart.object.getWeightedStromgrenRadiusAtNeLy(ne);
-                            var distanceFromObject=rectangularDistance(stromSearchStart.object.getWieghtedEquitorialXyzLocation(), lwo.object.getWieghtedEquitorialXyzLocation());
-                            if ( weightedStromgren> distanceFromObject) {
-                                withinStromgrenSphereSoFar=true;
-                            }
-                        }
-                        var withinStromgrenSphere = withinStromgrenSphereSoFar;
+                        var withinStromgrenSphere=this.withinStromgren(lwo, linesWithObjects);
                         ctx.strokeStyle = withinStromgrenSphere?'black':downConvertColour('#000000');
                         ctx.moveTo(startXy.x, startXy.y);
                         ctx.lineTo(endXy.x, endXy.y);
                         ctx.stroke();
-                        if (withinStromgrenSphere && includeStromgren || !withinStromgrenSphere && !rejectNonStromgren ) {
+                        for (let star of lwo.object.starSystems) {
+                            var radius=star.getRadiusEstimatePixels();
+                            totalVerticalIncrement+=2*radius+2;
+                            maxHorzIncrement=Math.max(maxHorzIncrement, radius);
+                        }
+                        var widthHeight={width:maxHorzIncrement*2, height:totalVerticalIncrement}
+                        if (this.highlight==lwo.object.id) {
+                            var topLeftx=endXy.x-14 -widthHeight.width/2;
+                            var topLefty=endXy.y-14;
+                            ctx.fillStyle='#ffff00'
+                            ctx.fillRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.clearRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.strokeStyle='black'
+                            ctx.lineWidth=2;
+                            ctx.strokeRect(topLeftx, topLefty, widthHeight.width+28, widthHeight.height+28)
+                            ctx.strokeRect(endXy.x-4-widthHeight.width/2, endXy.y-4, widthHeight.width+8, widthHeight.height+8)
+                            ctx.lineWidth=1;
+                        }
+                        
+                        totalVerticalIncrement=0;
+                        maxHorzIncrement=0;
                             for (let star of lwo.object.starSystems) {
                                 var radius=star.getRadiusEstimatePixels();
                                 var rad=drawStar(ctx, endXy.x, endXy.y+totalVerticalIncrement+radius, radius, stellarClassColour(star.spectralClassLetter),  withinStromgrenSphere) // without number, for now.
@@ -318,9 +333,7 @@
                             ctx.moveTo(endXy.x+maxHorzIncrement+3, endXy.y);
                             ctx.strokeText(lwo.object.getName(), endXy.x+maxHorzIncrement+3, endXy.y)
                             return {width:maxHorzIncrement*2, height:totalVerticalIncrement}
-                        } else {
-                            return {width:0, height:0};
-                        }
+                       
             }
 
             coordsOver(x,y) {
@@ -340,6 +353,7 @@
                     var copiedStarSystemsArray=[];
                     for (let lwo of linesWithObjects) {
                         copiedStarSystemsArray.push(lwo.object)
+                        lwo.object.withinStromgren=this.withinStromgren(lwo, linesWithObjects)
                     }
                     copiedStarSystemsArray.sort((x,y) => {
                         var distanceX = rectangularDistance(x.getWieghtedEquitorialXyzLocation(), this.xyz);
@@ -350,15 +364,7 @@
                     })
                     for (var index=0; index<100; index++) {
                         var sSystem=copiedStarSystemsArray[index];
-                        var withinStromgrenSphereSoFar=false;
-                        for (let stromSearchStart of linesWithObjects) {
-                            var weightedStromgren=stromSearchStart.object.getWeightedStromgrenRadiusAtNeLy(ne);
-                            var distanceFromObject=rectangularDistance(stromSearchStart.object.getWieghtedEquitorialXyzLocation(), sSystem.getWieghtedEquitorialXyzLocation());
-                            if ( weightedStromgren> distanceFromObject) {
-                                withinStromgrenSphereSoFar=true;
-                            }
-                        }
-                        var withinStromgrenSphere = withinStromgrenSphereSoFar;
+                        var withinStromgrenSphere = sSystem.withinStromgren;
                         innerHtml+= "<tr style=\"cursor:pointer;"+(!withinStromgrenSphere?"color:"+( upConvertColour(downConvertColour('#000000'), 0.25)+";"):"")+"\" onclick=\"moveTo("+sSystem.getWieghtedEquitorialXyzLocation().X+", "
                         +sSystem.getWieghtedEquitorialXyzLocation().Y+", "+sSystem.getWieghtedEquitorialXyzLocation().Z+")\" onmouseenter=\"highlight('"+sSystem.id+"')\" onmouseleave=\"highlight('')\"  ><td>"+sSystem.getName()+"</td><Td>"+roundToDp(rectangularDistance(sSystem.getWieghtedEquitorialXyzLocation(), this.xyz), 2)+" ly</td></tr>";
                     }
